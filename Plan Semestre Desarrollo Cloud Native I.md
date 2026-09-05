@@ -1,14 +1,29 @@
 # Plan del Semestre — Desarrollo Cloud Native I
 
 **Escuela de Informática y Telecomunicaciones · Duoc UC · Presencial**
-**Sigla: [confirmar en AVA] · Total: 90 horas (referencial) · Caso práctico en AWS Academy (API Manager / API Gateway)**
+**Sigla: DSY1107 · Total: 90 horas (referencial) · Caso práctico en Azure (API Management)**
 
 > Plan tentativo de 16 semanas. Basado en los materiales disponibles en la carpeta (actividades 1.1.x del bloque 1).
-> **La sigla, el programa completo y la ponderación no estaban en la carpeta**: confirma en AVA antes de fijar fechas.
+> Plataforma: **Azure for Students** ($100 USD crédito) · Tenant: **duoc.cl**
 
 ---
 
-## 1. Estructura de evaluaciones y ponderación
+## 1. Stack tecnológico
+
+| Servicio Azure | Función |
+|---------------|---------|
+| Azure API Management | API Gateway (rutas, CORS, versionamiento, políticas) |
+| Azure AD / AD B2C | Autenticación centralizada (OAuth2, OpenID Connect) |
+| Azure App Service | Hosting de microservicios Spring Boot |
+| Azure Cosmos DB | Base de datos NoSQL |
+| Azure Service Bus | Mensajería (equivalente a RabbitMQ) |
+| Azure Event Hubs | Eventos Kafka-compatible (equivalente a Apache Kafka) |
+| Azure Container Instances | Despliegue de contenedores Docker |
+| Azure DevOps / GitHub | CI/CD |
+
+---
+
+## 2. Estructura de evaluaciones y ponderación
 
 ⚠️ **Pendiente de confirmar en AVA.** Se espera el esquema estándar Duoc: parciales (60%) + Evaluación Final Transversal (40%), con un caso práctico cloud. Anota aquí las ponderaciones reales:
 
@@ -23,49 +38,32 @@
 
 ---
 
-## 2. Ruta de aprendizaje y cronograma
+## 3. Ruta de aprendizaje y cronograma
 
 ### Bloque 1 — EA1: API Management y exponer APIs seguras (semanas 1–4 · materiales disponibles)
 
 | Semana | Actividad | Descripción / Entregable |
 |---|---|---|
-| 1 | Act 1.1.1 · Conociendo un API Manager | Qué es un API Manager (punto de entrada central gestionado), API Gateway, tipos de API (REST, WebSocket), casos de uso, portal para desarrolladores. Conceptos de la guía |
-| 2 | Act 1.1.2 · Tutorial: Creando Nuestro Primer API Manager | **Práctica AWS Academy:** ingresar al tenant de AWS, crear un servicio de API Gateway para securitizar APIs. Capturas de pantalla del proceso |
-| 3 | Act 1.1.3 · Versionando APIs | Por qué versionar, versionamiento semántico, versionamiento en API Gateway, proceso de deprecación de una API, buenas prácticas |
-| 4 | Act 1.1.4 · Configurando CORS en el API Gateway | Qué es CORS (Cross-Origin Resource Sharing) y por qué se configura en el API Gateway. **Práctica en AWS** |
+| 1 | Act 1.1.1 · Conociendo un API Manager | Qué es un API Manager, API Gateway, tipos de API (REST, WebSocket), casos de uso, portal para desarrolladores |
+| 2 | Act 1.1.2 · Tutorial: Creando Nuestro Primer API Manager | **Práctica Azure:** crear recurso Azure API Management, ruta GET /datos, integración HTTP con mindicador.cl/api. Capturas de pantalla |
+| 3 | Act 1.1.3 · Versionando APIs | Versionamiento semántico, versiones v1/v2 en Azure API Management, proceso de deprecación con headers |
+| 4 | Act 1.1.4 · Configurando CORS en el API Gateway | CORS policy XML en Azure API Management, Simple vs Preflight, despliegue y pruebas |
 
 **📌 Ev Parcial 1** → probablemente cierra este bloque (confirmar en AVA).
 
 ### Bloques 2 y 3 — Pendientes de materiales (semanas 5–15)
 
 > ⚠️ Los materiales de las actividades 1.2.x en adelante aún no están en la carpeta. Temas probables según el enfoque de la asignatura (confirmar con el docente/AVA):
-> - **Microservicios y contenedores** (arquitecturas nativas cloud, Docker, orquestación)
-> - **Seguridad e identidad** (Identity as a Service, control de accesos, JWT/OAuth)
-> - **Colas y streaming de datos**
-> - **Despliegue y observabilidad** en la nube
+> - **Microservicios y contenedores** (Docker, Azure App Service, despliegue)
+> - **Seguridad e identidad** (Azure AD B2C, OAuth2, OpenID Connect)
+> - **Mensajería async** (Azure Service Bus, Azure Event Hubs)
+> - **Despliegue y observabilidad** en Azure
 
 ### Cierre — Semana 16
 
 | Semana | Actividad | Horas |
 |---|---|---|
 | 16 | **Evaluación Final Transversal (40%)** | ____ |
-
----
-
-## 3. Detalle de entregables ya disponibles (guías en la carpeta)
-
-### Act 1.1.1 — Conociendo un API Manager (guía)
-- **12 páginas.** API Manager como capa gestionada que elimina la administración de infraestructura: punto de entrada central, puente seguro entre cliente y servicios backend, REST y WebSocket, portal para desarrolladores.
-- **Tip:** estudia los desafíos que resuelve (infraestructura manual, carga operativa, retrasos en desarrollo, vulnerabilidades).
-
-### Act 1.1.2 — Tutorial: Creando Nuestro Primer API Manager (práctica AWS)
-- **13 páginas · práctica en AWS Academy.** Crear un API Manager para securitizar APIs usando el servicio de API Gateway. Debes registrar cada paso con capturas.
-
-### Act 1.1.3 — Versionando APIs (guía)
-- **15 páginas.** Versionamiento semántico, versionamiento en API Gateway, proceso de deprecación de una API y buenas prácticas. Razones: no romper clientes existentes, agregar funcionalidades sin afectar consumidores.
-
-### Act 1.1.4 — Configurando CORS en el API Gateway (guía 2025)
-- **6 páginas.** CORS (Cross-Origin Resource Sharing): mecanismo de seguridad de navegadores, cuándo se requiere y cómo configurarlo en el API Gateway de AWS.
 
 ---
 
@@ -84,8 +82,9 @@
 
 ---
 
-## 5. Referencias sugeridas
+## 5. Referencias
 
-1. AWS Academy (portal con el tenant de prácticas).
-2. Documentación de AWS API Gateway.
-3. Documentación de CORS (MDN Web Docs) y versionamiento semántico (semver.org).
+1. [Azure API Management docs](https://learn.microsoft.com/azure/api-management/)
+2. [Semantic Versioning 2.0.0](https://semver.org/)
+3. [IETF — HTTP Deprecation Header (RFC 8594)](https://www.rfc-editor.org/rfc/rfc8594)
+4. [Azure for Students](https://azure.microsoft.com/es-es/free-students/)

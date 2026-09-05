@@ -1,0 +1,10 @@
+# Azure ngrok
+*.exe
+*.zip
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# OS
+.DS_Store
