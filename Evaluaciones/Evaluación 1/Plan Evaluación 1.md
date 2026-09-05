@@ -75,9 +75,11 @@ La evaluación parcial 1 consiste en:
 - [x] Crear API **eco-api** en APIM (service-url: `https://mindicador.cl/api`, path `eco`)
 - [x] Crear operación GET `get-indicadores`
 - [x] Crear version set `eco-versions` (esquema Segment)
-- [ ] **Portal**: asignar la API a la versión `v1` (y crear `v2`) dentro del version set
-- [ ] **Portal**: aplicar política CORS a nivel de API (permitir `http://localhost:5173`)
-- [ ] Probar gateway URL (`https://eco-apim.azure-api.net/eco/...`)
+- [x] Asignar la API a la versión `v1` (`eco-api`) y crear versión `v2` (`eco-api-v2`)
+- [x] Aplicar política CORS a nivel de API (permitir `http://localhost:5173`) en v1 y v2
+- [x] Probar gateway URLs versionadas:
+  - `https://eco-apim.azure-api.net/eco/v1` → 200 (proxy + CORS)
+  - `https://eco-apim.azure-api.net/eco/v2` → 200 (proxy + CORS)
 
 ### Fase 2: Backend (Spring Boot)
 - [x] Agregar dependencia spring-security (OAuth2 resource server)
