@@ -1,0 +1,162 @@
+========== SCRIPT SMARTLOGIX - EVALUACION PARCIAL 1 (DSY1107) ==========
+
+Que es SmartLogix?
+Sistema academico de gestion logistica (inventario, pedidos, envios, transportistas) organizado como microservicios: frontend React + 5 servicios Spring Boot + API Gateway + infra Docker (4 PostgreSQL, RabbitMQ, pgAdmin).
+
+ARQUITECTURA:
+Frontend React (5173) -> API Gateway (8080) -> identity-service (8084), inventory-service (8081), order-service (8082), shipping-service (8083). El frontend NUNCA llama directo a los microservicios: todo pasa por el gateway.
+
+==========================================
+1. API MANAGER / GATEWAY
+==========================================
+Concepto: punto de entrada central por donde pasan todas las peticiones. Resuelve exposicion unificada, seguridad centralizada, enrutamiento, CORS y observabilidad.
+
+Implementacion (Spring Cloud Gateway WebMVC), rutas en api-gateway/src/main/resources/application.properties:
+
+  spring.cloud.gateway.server.webmvc.routes[0].id=identity-service
+  spring.cloud.gateway.server.webmvc.routes[0].uri=http://localhost:8084
+  spring.cloud.gateway.server.webmvc.routes[0].predicates[0]=Path=/api/auth/**
+
+  spring.cloud.gateway.server.webmvc.routes[2].id=inventory-service
+  spring.cloud.gateway.server.webmvc.routes[2].uri=http://localhost:8081
+  spring.cloud.gateway.server.webmvc.routes[2].predicates[0]=Path=/api/inventory/**
+
+Significado: GET http://localhost:8080/api/inventory/products es enrutado a http://localhost:8081/api/inventory/products.
+
+Extras del gateway: health agregado en /api/system/health y rutas visibles en /actuator/gateway/routes.
+
+==========================================
+2. JWT Y CLAIMS
+==========================================
+Concepto: JWT (JSON Web Token) = Header.Payload.Signature. Los claims son los datos dentro del payload (quien es, cuando expira, rol).
+
+Emision del token (identity-service, JwtTokenService.java):
+
+  JwtClaimsSet claims = JwtClaimsSet.builder()
+      .issuer("smartlogix-identity-service")   // iss
+      .issuedAt(now)                           // iat
+      .expiresAt(expiresAt)                    // exp (+3600s)
+      .subject(user.getEmail())                // sub
+      .claim("userId", user.getId())           // custom
+      .claim("role", user.getRole().getName().name())  // custom
+      .build();
+  JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).type("JWT").build();
+  return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+
+Token real decodificado:
+  {"iss":"smartlogix-identity-service","sub":"viewer@smartlogix.cl","role":"VIEWER","exp":1778720805,"iat":1778717205,"userId":3}
+
+Firma HS256 (SecurityConfig.java):
+  @Bean JwtEncoder: new NimbusJwtEncoder(new ImmutableSecret<>(secretKey(secret)))
+  @Bean JwtDecoder: NimbusJwtDecoder.withSecretKey(secretKey(secret)).macAlgorithm(MacAlgorithm.HS256).build()
+
+Secreto en application.properties:
+  smartlogix.jwt.issuer=smartlogix-identity-service
+  smartlogix.jwt.expiration-seconds=3600
+  smartlogix.jwt.secret=smartlogix-academic-mvp-secret-key-change-later-minimum-64-characters
+
+==========================================
+3. VALIDACION DEL JWT Y AUTORIZACION POR ROL
+==========================================
+Concepto: el JWT es auto-contenido; la autorizacion se decide por claims sin consultar BD. Se usa un conversor claim->autoridad.
+
+Conversor (SecurityConfig.java):
+
+  @Bean
+  public Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter() {
+      return jwt -> {
+          String role = jwt.getClaimAsString("role");
+          List<SimpleGrantedAuthority> authorities = role == null || role.isBlank()
+                  ? List.of()
+                  : List.of(new SimpleGrantedAuthority("ROLE_" + role));
+          return new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
+      };
+  }
+
+Reglas de autorizacion (identity):
+  .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+  .requestMatchers("/actuator/health", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+  .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+  .requestMatchers("/api/auth/me").authenticated()
+  .requestMatchers("/api/users", "/api/users/**").hasRole("ADMIN")
+  .anyRequest().authenticated()
+
+Reglas del gateway (por verbo HTTP):
+  GET sobre /api/inventory|orders|shipping/** -> hasAnyRole("ADMIN","OPERATOR","VIEWER")
+  mutaciones -> hasAnyRole("ADMIN","OPERATOR")
+  El gateway ADEMAS exige el claim role (lanza JwtException si falta).
+
+Roles: ADMIN (todo), OPERATOR (operacion diaria), VIEWER (solo lectura).
+
+==========================================
+4. CORS
+==========================================
+Concepto: CORS relaja la Same-Origin Policy. Con headers no simples (Authorization) el navegador dispara un preflight OPTIONS antes.
+
+Implementacion (api-gateway CorsConfig.java):
+
+  registry.addMapping("/**")
+      .allowedOrigins("http://localhost:3000", "http://localhost:5173")
+      .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+      .allowedHeaders("Authorization", "Content-Type", "X-Correlation-Id")
+      .exposedHeaders("X-Correlation-Id")
+      .maxAge(3600);
+
+Detalles: se permite OPTIONS por el preflight; se permite Authorization para el Bearer token. Cada microservicio ademas hace .cors(Customizer.withDefaults()).
+
+==========================================
+5. VERSIONADO DE APIS (NO IMPLEMENTADO AQUI)
+==========================================
+SmartLogix NO versiona las APIs (no usa /api/v1/). Las unicas menciones de "version" son metadatos de OpenAPI. Punto a mencionar con honestidad: se resolveria con prefijo /api/v1/ o esquema header/query. En el proyecto propio (Azure APIM) el versionado SI esta implementado (v1/v2).
+
+==========================================
+6. OAUTH2/OIDC: EL MATIZ IMPORTANTE
+==========================================
+SmartLogix usa spring-boot-starter-oauth2-resource-server PERO NO implementa el protocolo OAuth2/OIDC completo:
+- Emisor/validador JWT propio HS256: SI
+- Authorization Server externo (Azure AD B2C, Keycloak, Auth0): NO
+- Authorization Code + PKCE: NO
+- client_id / client_secret / scopes / refresh token: NO
+- JWKS (claves publicas): NO
+- Validacion de issuer: NO (issuer es solo un claim)
+
+Conclusion: demuestra el patron JWT Bearer + Resource Server + API Gateway, pero la autenticacion es LOCAL (formulario propio), no es IDaaS.
+
+==========================================
+7. FLUJO COMPLETO PARA LA DEMO
+==========================================
+1. POST http://localhost:8080/api/auth/login (email + password)
+2. Gateway recibe, NO valida (permitAll), enruta a identity-service :8084
+3. Identity valida BCrypt, genera JWT, responde {accessToken}
+4. Frontend guarda token y lo envia como "Authorization: Bearer <jwt>"
+5. GET /api/inventory/products -> gateway valida JWT + rol -> enruta a :8081 -> 200
+6. Sin token -> 401; token VIEWER con mutacion -> 403
+
+Usuarios seed: admin@smartlogix.cl/admin123, operator@smartlogix.cl/operator123, viewer@smartlogix.cl/viewer123
+
+==========================================
+8. COMPARACION SMARTLOGIX vs ECO-MANTENIMIENTO (PROYECTO PROPIO)
+==========================================
+- Emision de tokens: Interna HS256 (SmartLogix) vs Azure AD B2C RSA/JWKS (Eco)
+- OAuth2/OIDC: solo resource server vs Authorization Code + PKCE (MSAL)
+- API Gateway: Spring Cloud Gateway vs Azure API Management
+- CORS: CorsConfig.java vs politica CORS en APIM
+- Versionado: NO vs SI (v1/v2)
+- Roles: ADMIN/OPERATOR/VIEWER vs perfil usuario B2C
+- Validacion: secreto compartido vs JWKS publico
+
+==========================================
+9. CHECKLIST DEFENSA
+==========================================
+[ ] Login admin (obtener JWT)
+[ ] Decodificar JWT (jwt.io): header/payload/signature + claims
+[ ] Explicar claims iss, sub, exp, iat, role, userId
+[ ] Mostrar /actuator/gateway/routes
+[ ] Pedido: stock antes/despues, evento RabbitMQ ORDER_OUT
+[ ] Shipment auto-creado, IN_TRANSIT -> DELIVERED
+[ ] Sin token -> 401; con token -> 200; rol mal -> 403
+[ ] Swagger de cada servicio
+[ ] Tablas en pgAdmin
+[ ] Contrastar JWT local vs IDaaS (Azure AD B2C)
+
+========== FIN DEL SCRIPT ==========
