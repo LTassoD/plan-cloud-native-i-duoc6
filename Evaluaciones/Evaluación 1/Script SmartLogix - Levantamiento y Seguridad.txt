@@ -1,0 +1,141 @@
+========== PASO A PASO: LEVANTAR SMARTLOGIX + COMO SE INCORPORA LA SEGURIDAD (DSY1107) ==========
+
+PRINCIPIO CLAVE: la seguridad NO aparece de golpe. Se construye en capas mientras arranca el proyecto, en este orden:
+
+  PASO 0: Docker (Postgres x4, RabbitMQ, pgAdmin)   -> infraestructura
+  PASO 1: identity-service (8084)                    -> emite JWT, roles y usuarios
+  PASO 2: inventory/order/shipping (8081/2/3)        -> validan el JWT (resource servers)
+  PASO 3: api-gateway (8080)                         -> entrada unica, valida, enruta, CORS
+  PASO 4: frontend (5173)                            -> login, Bearer token, UI por rol
+
+PRERREQUISITOS: Java 21, Node 22, Docker Desktop, el repo clonado. Maven wrapper incluido (mvnw.cmd), no se necesita Maven global.
+
+==========================================
+PASO 0 - INFRAESTRUCTURA (Docker)
+==========================================
+Comando:
+  docker compose up -d
+
+Queda arriba: postgres-identity(5436), postgres-inventory(5433), postgres-orders(5434), postgres-shipping(5435), rabbitmq(5672/15672, smartlogix/smartlogix123), pgadmin(5050, admin@smartlogix.cl/admin123).
+
+Seguridad de aplicacion en este paso: NINGUNA. Solo credenciales de BD local. Los 5 microservicios Spring corren manualmente y usan estas BD.
+
+==========================================
+PASO 1 - IDENTITY-SERVICE (8084): el emisor de identidad
+==========================================
+Comando:
+  cd identity-service
+  mvnw.cmd spring-boot:run
+
+Que se carga al arrancar:
+1) application.properties:
+   server.port=8084
+   smartlogix.jwt.issuer=smartlogix-identity-service
+   smartlogix.jwt.expiration-seconds=3600
+   smartlogix.jwt.secret=smartlogix-academic-mvp-secret-key-change-later-minimum-64-characters
+
+2) Spring Security crea los beans (SecurityConfig.java):
+   - PasswordEncoder (BCrypt) para validar contraseñas
+   - JwtEncoder (firma tokens HS256) y JwtDecoder (verifica tokens)
+   - jwtAuthenticationConverter: claim "role" -> autoridad ROLE_x
+
+3) SecurityFilterChain activa reglas por ruta:
+   .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()   (login publico)
+   .requestMatchers("/actuator/health", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+   .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+   .requestMatchers("/api/auth/me").authenticated()
+   .requestMatchers("/api/users", "/api/users/**").hasRole("ADMIN")
+   .anyRequest().authenticated()
+
+4) DataSeeder ejecuta su CommandLineRunner: crea roles ADMIN/OPERATOR/VIEWER y usuarios seed con password BCrypt:
+   admin@smartlogix.cl/admin123, operator@smartlogix.cl/operator123, viewer@smartlogix.cl/viewer123
+
+Seguridad incorporada aqui: emision de JWT, roles, usuarios seed, proteccion /api/users.
+
+==========================================
+PASO 2 - INVENTORY / ORDER / SHIPPING (8081, 8082, 8083): resource servers
+==========================================
+Comandos (3 terminales):
+  cd inventory-service && mvnw.cmd spring-boot:run   # 8081
+  cd order-service     && mvnw.cmd spring-boot:run   # 8082
+  cd shipping-service  && mvnw.cmd spring-boot:run   # 8083
+
+Que se carga: cada servicio tiene SecurityConfig identico + el MISMO secreto HS256 compartido (smartlogix.jwt.secret) + su DataSeeder de negocio (productos, clientes, transportistas).
+
+Reglas por rol (ejemplo inventory):
+  .requestMatchers(HttpMethod.GET, "/api/inventory/**").hasAnyRole("ADMIN","OPERATOR","VIEWER")
+  .requestMatchers("/api/inventory/**").hasAnyRole("ADMIN","OPERATOR")
+
+Punto clave: cada microservicio REVALIDA el JWT por su cuenta (defensa en profundidad; no confian ciegos en el gateway).
+
+Seguridad incorporada: validacion de JWT por request + autorizacion por rol por endpoint.
+
+==========================================
+PASO 3 - API-GATEWAY (8080): consolidacion de seguridad
+==========================================
+Comando:
+  cd api-gateway
+  mvnw.cmd spring-boot:run
+
+Que se carga:
+1) Rutas de enrutamiento (application.properties):
+   /api/auth/** -> 8084 | /api/users/** -> 8084 | /api/inventory/** -> 8081 | /api/orders/** -> 8082 | /api/shipping/** -> 8083
+
+2) CorsConfig.java:
+   allowedOrigins("http://localhost:3000","http://localhost:5173")
+   allowedMethods("GET","POST","PUT","PATCH","DELETE","OPTIONS")
+   allowedHeaders("Authorization","Content-Type","X-Correlation-Id")
+   exposedHeaders("X-Correlation-Id"), maxAge(3600)
+
+3) SecurityConfig del gateway: valida JWT ANTES de reenviar (+ exige claim "role" o lanza JwtException):
+   .requestMatchers(HttpMethod.POST,"/api/auth/login").permitAll()
+   GET negocio -> hasAnyRole("ADMIN","OPERATOR","VIEWER")
+   mutaciones -> hasAnyRole("ADMIN","OPERATOR")
+
+4) Extras: CorrelationIdFilter agrega X-Correlation-Id (trazabilidad); /api/system/health consulta los 4 servicios.
+
+Seguridad incorporada: entrada unica (API Manager), segunda capa de validacion, CORS centralizado, RBAC por verbo HTTP.
+
+==========================================
+PASO 4 - FRONTEND REACT (5173)
+==========================================
+Comandos:
+  cd frontend
+  npm install
+  npm run dev
+
+Seguridad en el frontend:
+- Login con formulario -> POST /api/auth/login (a traves del gateway :8080)
+- Guarda token en sessionStorage (clave "smartlogix.accessToken")
+- httpClient.ts agrega cabecera automaticamente:
+    requestHeaders.set("Authorization", `Bearer ${token}`)
+- Maneja 401: limpia sesion y redirige a /login
+- ProtectedRoute protege rutas; roleAccess.ts (34 permisos) adapta la UI por rol
+
+==========================================
+RESUMEN: LINEA DE TIEMPO DE LA SEGURIDAD
+==========================================
+0 Docker          -> (solo datos)                      Infraestructura
+1 identity        -> emite JWT, roles, usuarios         JWT/Claims/RBAC
+2 negocio(3)      -> validan JWT por request            Resource Server
+3 gateway         -> entrada unica, valida, enruta,CORS API Manager/CORS
+4 frontend        -> Bearer token, rutas/UI protegidas  SPA cliente
+
+==========================================
+DEMO DE PROGRESION (para la defensa)
+==========================================
+1) Solo Docker: no hay APIs -> nada que proteger.
+2) Solo identity: puedes hacer login y obtener JWT, pero no hay negocio.
+3) Los 3 servicios SIN gateway: puedes llamar localhost:8081/api/inventory/products directo con el token, pero el navegador lo bloquea por CORS -> se confirma la necesidad del gateway.
+4) Con gateway: todo por localhost:8080; CORS ok; sin token 401; token con rol equivocado 403.
+5) Con frontend: login visual, token en memoria, UI adaptada por rol.
+
+==========================================
+OPERACION
+==========================================
+- Detener: CTRL+C en cada ventana. Infra: docker compose down (con datos) / down -v (borra volumenes).
+- Automatico: start-smartlogix.bat abre las 5 ventanas (orden: identity -> gateway -> inventory -> order -> shipping).
+- Ver rutas gateway: GET http://localhost:8080/actuator/gateway/routes
+- Health agregado: GET http://localhost:8080/api/system/health
+
+========== FIN DEL SCRIPT ==========
